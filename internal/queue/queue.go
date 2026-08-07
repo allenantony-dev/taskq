@@ -5,10 +5,12 @@ type Queue struct {
 	tasks  []Task
 }
 
-func (q *Queue) Enqueue(task Task) {
+func (q *Queue) Enqueue(task Task) int {
 	q.nextID++
 	task.ID = q.nextID
 	q.tasks = append(q.tasks, task)
+
+	return task.ID
 }
 
 func (q *Queue) Dequeue() (Task, bool) {

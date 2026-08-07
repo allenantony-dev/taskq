@@ -24,9 +24,9 @@ func main() {
 	}
 
 	fmt.Println("Producer:")
-	for i, task := range tasks {
-		q.Enqueue(task)
-		fmt.Printf("Enqueued task #%d (%s) \n", i+1, task.Type)
+	for _, task := range tasks {
+		id := q.Enqueue(task)
+		fmt.Printf("Enqueued task #%d (%s) \n", id, task.Type)
 	}
 
 	fmt.Println("\nWorker:")
