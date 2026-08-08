@@ -22,12 +22,18 @@ func NewWorker(q *queue.Queue, handlers map[string]Handler) *Worker {
 
 func (w *Worker) Run() {
 	for {
-		task, ok := w.q.Dequeue()
-		if !ok {
-			fmt.Println("Waiting ...")
-			time.Sleep(5 * time.Minute)
+		task, ok, err := w.q.Dequeue()
+		if err != nil {
+			fmt.Printf("Failed to dequeue task: %v\n", err)
 			continue
 		}
+		if !ok {
+			fmt.Println("Waiting ...")
+			time.Sleep(2 * time.Minute)
+			continue
+		}
+
+		fmt.Printf("Dequeued task %d (%s)\n", task.ID, task.Type)
 
 		handler, ok := w.handlers[task.Type]
 		if !ok {
@@ -40,6 +46,9 @@ func (w *Worker) Run() {
 			continue
 		}
 
+		if err := w.q.Complete(task.ID); err != nil {
+			fmt.Printf("Failed to complete task: %d: %v\n", task.ID, err)
+		}
 		fmt.Printf("Task %d completed\n", task.ID)
 	}
 }
