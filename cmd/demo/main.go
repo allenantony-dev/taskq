@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"taskq/internal/queue"
+	"taskq/internal/worker"
 )
 
 func main() {
@@ -31,15 +32,22 @@ func main() {
 
 	fmt.Println("\nWorker:")
 
-	for {
-		task, ok := q.Dequeue()
-		if !ok {
-			fmt.Println("\nQueue Empty")
-			break
-		}
-		fmt.Printf("Dequeued task %d (%s) \n", task.ID, task.Type)
-		fmt.Printf("Processing %s task ...\n", task.Type)
-		fmt.Println("Done.")
+	handlers := map[string]worker.Handler{
+		"email": func(task queue.Task) error {
+			fmt.Println("Sending email ...")
+			return nil
+		},
+		"image": func(task queue.Task) error {
+			fmt.Println("Resizing image ...")
+			return nil
+		},
+		"report": func(task queue.Task) error {
+			fmt.Println("Generating report ...")
+			return nil
+		},
 	}
+
+	w := worker.NewWorker(&q, handlers)
+	w.Run()
 
 }
