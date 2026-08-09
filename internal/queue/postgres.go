@@ -49,18 +49,22 @@ func (q *Queue) Dequeue() (Task, bool, error) {
 	var task Task
 	var payload []byte
 
-	err := q.db.QueryRow(
+	tx, err := q.db.Begin(context.Background())
+	if err != nil {
+		return Task{}, false, err
+	}
+	defer tx.Rollback(context.Background())
+
+	err = tx.QueryRow(
 		context.Background(),
-		`UPDATE jobs
-		SET state = 'running'
-		WHERE id = (
-			SELECT id
-			FROM jobs
-			WHERE state = 'pending'
-			ORDER BY id
-			LIMIT 1
-		)
-		RETURNING id, type, payload;`,
+		`
+		SELECT id, type, payload
+		FROM jobs
+		WHERE state = 'pending'
+		ORDER BY id
+		LIMIT 1
+		FOR UPDATE SKIP LOCKED;
+		`,
 	).Scan(
 		&task.ID,
 		&task.Type,
@@ -76,6 +80,23 @@ func (q *Queue) Dequeue() (Task, bool, error) {
 	}
 
 	if err := json.Unmarshal(payload, &task.Payload); err != nil {
+		return Task{}, false, err
+	}
+
+	_, err = tx.Exec(
+		context.Background(),
+		`
+		UPDATE jobs
+		SET state = 'running'
+		WHERE id = $1;
+		`,
+		task.ID,
+	)
+	if err != nil {
+		return Task{}, false, err
+	}
+
+	if err := tx.Commit(context.Background()); err != nil {
 		return Task{}, false, err
 	}
 
