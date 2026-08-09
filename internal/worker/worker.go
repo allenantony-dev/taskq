@@ -4,17 +4,23 @@ import (
 	"fmt"
 	"taskq/internal/queue"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Handler func(queue.Task) error
 
 type Worker struct {
+	id       string
+	lease    time.Duration
 	q        *queue.Queue
 	handlers map[string]Handler
 }
 
 func NewWorker(q *queue.Queue, handlers map[string]Handler) *Worker {
 	return &Worker{
+		id:       uuid.NewString(),
+		lease:    30 * time.Second,
 		q:        q,
 		handlers: handlers,
 	}
@@ -22,7 +28,7 @@ func NewWorker(q *queue.Queue, handlers map[string]Handler) *Worker {
 
 func (w *Worker) Run() {
 	for {
-		task, ok, err := w.q.Dequeue()
+		task, ok, err := w.q.Dequeue(w.id, w.lease)
 		if err != nil {
 			fmt.Printf("Failed to dequeue task: %v\n", err)
 			continue

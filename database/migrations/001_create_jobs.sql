@@ -2,5 +2,7 @@ CREATE TABLE jobs (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     type VARCHAR NOT NULL,
     payload JSONB NOT NULL,
-    state VARCHAR NOT NULL
+    state VARCHAR NOT NULL,
+    current_worker VARCHAR,
+    lease_expiry TIMESTAMPTZ
 );

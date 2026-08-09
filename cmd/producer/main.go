@@ -41,12 +41,14 @@ func main() {
 		},
 	}
 
-	for _, task := range tasks {
-		id, err := q.Enqueue(task)
-		if err != nil {
-			log.Fatal(err)
-		}
+	for range 10 {
+		for _, task := range tasks {
+			id, err := q.Enqueue(task)
+			if err != nil {
+				log.Fatal(err)
+			}
 
-		fmt.Printf("Enqueued task: #%d\n", id)
+			fmt.Printf("Enqueued task: #%d\n", id)
+		}
 	}
 }

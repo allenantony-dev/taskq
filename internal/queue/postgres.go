@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -45,7 +46,7 @@ func (q *Queue) Enqueue(task Task) (int64, error) {
 	return id, nil
 }
 
-func (q *Queue) Dequeue() (Task, bool, error) {
+func (q *Queue) Dequeue(workerID string, leaseDuration time.Duration) (Task, bool, error) {
 	var task Task
 	var payload []byte
 
@@ -83,14 +84,20 @@ func (q *Queue) Dequeue() (Task, bool, error) {
 		return Task{}, false, err
 	}
 
+	leaseExpiry := time.Now().Add(leaseDuration)
+
 	_, err = tx.Exec(
 		context.Background(),
 		`
 		UPDATE jobs
-		SET state = 'running'
+		SET state = 'running',
+			current_worker = $2,
+			lease_expiry = $3
 		WHERE id = $1;
 		`,
 		task.ID,
+		workerID,
+		leaseExpiry,
 	)
 	if err != nil {
 		return Task{}, false, err
@@ -108,7 +115,9 @@ func (q *Queue) Complete(id int64) error {
 		context.Background(),
 		`
 		UPDATE jobs
-		SET state = 'done'
+		SET state = 'done',
+		    current_worker = NULL,
+			lease_expiry = NULL
 		WHERE id = $1
 		`,
 		id,
