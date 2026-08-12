@@ -125,3 +125,22 @@ func (q *Queue) Complete(id int64) error {
 
 	return err
 }
+
+func (q *Queue) ReapExpired() (int64, error) {
+	result, err := q.db.Exec(
+		context.Background(),
+		`
+		UPDATE jobs
+		SET state = 'pending',
+			current_worker = NULL,
+			lease_expiry = NULL
+		WHERE state = 'running'
+			AND lease_expiry < NOW();
+		`,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	return result.RowsAffected(), nil
+}
