@@ -1,6 +1,8 @@
 package worker
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"taskq/internal/queue"
 	"time"
@@ -41,20 +43,59 @@ func (w *Worker) Run() {
 
 		fmt.Printf("Dequeued task %d (%s)\n", task.ID, task.Type)
 
-		handler, ok := w.handlers[task.Type]
-		if !ok {
-			fmt.Printf("No handler for task type: %s\n", task.Type)
-			continue
-		}
+		w.process(task)
+	}
+}
 
-		if err := handler(task); err != nil {
-			fmt.Printf("Task %d failed: %v\n", task.ID, err)
-			continue
-		}
+func (w *Worker) process(task queue.Task) {
+	handler, ok := w.handlers[task.Type]
+	if !ok {
+		fmt.Printf("No handler for task type: %s\n", task.Type)
+		return
+	}
 
-		if err := w.q.Complete(task.ID); err != nil {
-			fmt.Printf("Failed to complete task: %d: %v\n", task.ID, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go w.heartbeat(ctx, task.ID)
+
+	if err := handler(task); err != nil {
+		fmt.Printf("Task %d failed: %v\n", task.ID, err)
+		return
+	}
+
+	completed, err := w.q.Complete(w.id, task.ID)
+	if err != nil {
+		fmt.Printf("Failed to complete task: %d: %v\n", task.ID, err)
+		return
+	}
+	if !completed {
+		fmt.Printf("Worker %s was evicted from task: %d\n", w.id, task.ID)
+		return
+	}
+	fmt.Printf("Task %d completed\n", task.ID)
+}
+
+func (w *Worker) heartbeat(ctx context.Context, taskID int64) {
+	ticker := time.NewTicker(w.lease / 3)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			renewed, err := w.q.Heartbeat(ctx, taskID, w.id, w.lease)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return
+				}
+				fmt.Printf("Failed to renew lease: %v\n", err)
+				continue
+			}
+			if !renewed {
+				fmt.Printf("Lease couldn't be renewed for worker %s working on task: %d\n", w.id, taskID)
+			}
+		case <-ctx.Done():
+			return
 		}
-		fmt.Printf("Task %d completed\n", task.ID)
 	}
 }

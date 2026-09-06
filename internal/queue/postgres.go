@@ -110,8 +110,8 @@ func (q *Queue) Dequeue(workerID string, leaseDuration time.Duration) (Task, boo
 	return task, true, nil
 }
 
-func (q *Queue) Complete(id int64) error {
-	_, err := q.db.Exec(
+func (q *Queue) Complete(workerID string, taskID int64) (bool, error) {
+	result, err := q.db.Exec(
 		context.Background(),
 		`
 		UPDATE jobs
@@ -119,11 +119,17 @@ func (q *Queue) Complete(id int64) error {
 		    current_worker = NULL,
 			lease_expiry = NULL
 		WHERE id = $1
+			AND current_worker = $2;
 		`,
-		id,
+		taskID,
+		workerID,
 	)
 
-	return err
+	if err != nil {
+		return false, err
+	}
+
+	return result.RowsAffected() == 1, nil
 }
 
 func (q *Queue) ReapExpired() (int64, error) {
@@ -143,4 +149,26 @@ func (q *Queue) ReapExpired() (int64, error) {
 	}
 
 	return result.RowsAffected(), nil
+}
+
+func (q *Queue) Heartbeat(ctx context.Context, taskID int64, workerID string, leaseExtension time.Duration) (bool, error) {
+	extension := time.Now().Add(leaseExtension)
+
+	result, err := q.db.Exec(
+		ctx,
+		`
+		UPDATE jobs
+		SET lease_expiry = $1
+		WHERE
+			id = $2 AND current_worker = $3
+		`,
+		extension,
+		taskID,
+		workerID,
+	)
+	if err != nil {
+		return false, err
+	}
+
+	return result.RowsAffected() == 1, nil
 }
