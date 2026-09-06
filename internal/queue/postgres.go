@@ -8,15 +8,16 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Queue struct {
-	db *pgx.Conn
+	db *pgxpool.Pool
 }
 
-func NewQueue(conn *pgx.Conn) *Queue {
+func NewQueue(pool *pgxpool.Pool) *Queue {
 	return &Queue{
-		db: conn,
+		db: pool,
 	}
 }
 

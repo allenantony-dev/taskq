@@ -7,7 +7,7 @@ import (
 	"os"
 	"taskq/internal/queue"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -18,13 +18,13 @@ func main() {
 		log.Fatal("DATABASE_URL is not set")
 	}
 
-	conn, err := pgx.Connect(ctx, dbURL)
+	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer conn.Close(ctx)
+	defer pool.Close()
 
-	q := queue.NewQueue(conn)
+	q := queue.NewQueue(pool)
 
 	tasks := []queue.Task{
 		{
