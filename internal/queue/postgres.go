@@ -87,19 +87,21 @@ func (q *Queue) Dequeue(workerID string, leaseDuration time.Duration) (Task, boo
 
 	leaseExpiry := time.Now().Add(leaseDuration)
 
-	_, err = tx.Exec(
+	err = tx.QueryRow(
 		context.Background(),
 		`
 		UPDATE jobs
 		SET state = 'running',
 			current_worker = $2,
-			lease_expiry = $3
-		WHERE id = $1;
+			lease_expiry = $3,
+			fencing_token = fencing_token + 1
+		WHERE id = $1
+		RETURNING fencing_token;
 		`,
 		task.ID,
 		workerID,
 		leaseExpiry,
-	)
+	).Scan(&task.FencingToken)
 	if err != nil {
 		return Task{}, false, err
 	}
