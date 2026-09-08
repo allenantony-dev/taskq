@@ -1,0 +1,5 @@
+ALTER TABLE jobs
+    ADD COLUMN attempts     BIGINT      NOT NULL DEFAULT 0,
+    ADD COLUMN available_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ADD COLUMN max_attempts INTEGER     NOT NULL DEFAULT 5,
+    ADD COLUMN last_error   TEXT;

@@ -5,4 +5,6 @@ type Task struct {
 	Type         string
 	Payload      map[string]any
 	FencingToken int64
+	Attempts     int64
+	MaxAttempts  int64
 }

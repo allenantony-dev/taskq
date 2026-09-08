@@ -60,9 +60,10 @@ func (q *Queue) Dequeue(workerID string, leaseDuration time.Duration) (Task, boo
 	err = tx.QueryRow(
 		context.Background(),
 		`
-		SELECT id, type, payload
+		SELECT id, type, payload, max_attempts
 		FROM jobs
 		WHERE state = 'pending'
+			AND NOW() >= available_at
 		ORDER BY id
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED;
@@ -71,6 +72,7 @@ func (q *Queue) Dequeue(workerID string, leaseDuration time.Duration) (Task, boo
 		&task.ID,
 		&task.Type,
 		&payload,
+		&task.MaxAttempts,
 	)
 
 	if err != nil {
@@ -94,14 +96,15 @@ func (q *Queue) Dequeue(workerID string, leaseDuration time.Duration) (Task, boo
 		SET state = 'running',
 			current_worker = $2,
 			lease_expiry = $3,
-			fencing_token = fencing_token + 1
+			fencing_token = fencing_token + 1,
+			attempts = attempts + 1
 		WHERE id = $1
-		RETURNING fencing_token;
+		RETURNING fencing_token, attempts;
 		`,
 		task.ID,
 		workerID,
 		leaseExpiry,
-	).Scan(&task.FencingToken)
+	).Scan(&task.FencingToken, &task.Attempts)
 	if err != nil {
 		return Task{}, false, err
 	}
@@ -135,14 +138,63 @@ func (q *Queue) Complete(workerID string, taskID int64) (bool, error) {
 	return result.RowsAffected() == 1, nil
 }
 
-func (q *Queue) ReapExpired() (int64, error) {
+func (q *Queue) Retry(workerID string, taskID int64, delay time.Duration, lastError string) (bool, error) {
 	result, err := q.db.Exec(
 		context.Background(),
 		`
 		UPDATE jobs
 		SET state = 'pending',
 			current_worker = NULL,
-			lease_expiry = NULL
+			lease_expiry = NULL,
+			available_at = NOW() + $3,
+			last_error = $4
+		WHERE id = $1
+			AND current_worker = $2;
+		`,
+		taskID,
+		workerID,
+		delay,
+		lastError,
+	)
+	if err != nil {
+		return false, err
+	}
+
+	return result.RowsAffected() == 1, nil
+}
+
+func (q *Queue) Dead(workerID string, taskID int64, lastError string) (bool, error) {
+	result, err := q.db.Exec(
+		context.Background(),
+		`
+		UPDATE jobs
+		SET state = 'dead',
+			current_worker = NULL,
+			lease_expiry = NULL,
+			last_error = $3
+		WHERE id = $1
+			AND current_worker = $2;
+		`,
+		taskID,
+		workerID,
+		lastError,
+	)
+	if err != nil {
+		return false, err
+	}
+
+	return result.RowsAffected() == 1, nil
+}
+
+func (q *Queue) ReapExpired() (int64, error) {
+	result, err := q.db.Exec(
+		context.Background(),
+		`
+		UPDATE jobs
+		SET state = CASE WHEN attempts >= max_attempts THEN 'dead' ELSE 'pending' END,
+			current_worker = NULL,
+			lease_expiry = NULL,
+			last_error = 'lease expired'
 		WHERE state = 'running'
 			AND lease_expiry < NOW();
 		`,
