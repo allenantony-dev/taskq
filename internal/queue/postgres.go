@@ -26,8 +26,13 @@ func (q *Queue) Enqueue(taskType string, payload map[string]any) (int64, error) 
 	return id, err
 }
 
+// ErrKeyReused means an idempotency key was sent with different content than
+// the job that already holds it. That is a caller mistake, not a retry.
+var ErrKeyReused = errors.New("idempotency key reused with different content")
+
 // EnqueueAt schedules a task for a given time. A non-empty key deduplicates:
-// the insert is skipped and false returned if a job already holds that key.
+// if a job already holds that key, its id is returned with false and nothing
+// is inserted.
 func (q *Queue) EnqueueAt(taskType string, payload map[string]any, at time.Time, key string, priority int) (int64, bool, error) {
 	encoded, err := json.Marshal(payload)
 	if err != nil {
@@ -52,13 +57,65 @@ func (q *Queue) EnqueueAt(taskType string, payload map[string]any, at time.Time,
 	).Scan(&taskID)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, false, nil
+		var sameContent bool
+
+		// Compared in Postgres so jsonb equality handles key order and
+		// whitespace; the stored bytes never match a fresh json.Marshal.
+		err = q.db.QueryRow(
+			context.Background(),
+			`
+			SELECT id, type = $2 AND payload = $3
+			FROM jobs
+			WHERE idempotency_key = $1
+			`,
+			key,
+			taskType,
+			encoded,
+		).Scan(&taskID, &sameContent)
+		if err != nil {
+			return 0, false, err
+		}
+		if !sameContent {
+			return 0, false, ErrKeyReused
+		}
+
+		return taskID, false, nil
 	}
 	if err != nil {
 		return 0, false, err
 	}
 
 	return taskID, true, nil
+}
+
+func (q *Queue) Get(taskID int64) (TaskStatus, bool, error) {
+	var status TaskStatus
+
+	err := q.db.QueryRow(
+		context.Background(),
+		`
+		SELECT id, type, state, attempts, max_attempts, last_error
+		FROM jobs
+		WHERE id = $1
+		`,
+		taskID,
+	).Scan(
+		&status.ID,
+		&status.Type,
+		&status.State,
+		&status.Attempts,
+		&status.MaxAttempts,
+		&status.LastError,
+	)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return TaskStatus{}, false, nil
+	}
+	if err != nil {
+		return TaskStatus{}, false, err
+	}
+
+	return status, true, nil
 }
 
 func (q *Queue) Dequeue(workerID string, leaseDuration time.Duration) (Task, bool, error) {
