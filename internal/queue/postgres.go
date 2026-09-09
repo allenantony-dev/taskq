@@ -21,30 +21,43 @@ func NewQueue(pool *pgxpool.Pool) *Queue {
 	}
 }
 
-func (q *Queue) Enqueue(task Task) (int64, error) {
-	payload, err := json.Marshal(task.Payload)
+func (q *Queue) Enqueue(taskType string, payload map[string]any) (int64, error) {
+	id, _, err := q.EnqueueAt(taskType, payload, time.Now(), "")
+	return id, err
+}
+
+// EnqueueAt schedules a task for a given time. A non-empty key deduplicates:
+// the insert is skipped and false returned if a job already holds that key.
+func (q *Queue) EnqueueAt(taskType string, payload map[string]any, at time.Time, key string) (int64, bool, error) {
+	encoded, err := json.Marshal(payload)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 
-	var id int64
+	var taskID int64
 
 	err = q.db.QueryRow(
 		context.Background(),
 		`
-		INSERT INTO jobs (type, payload, state)
-		VALUES ($1, $2, 'pending')
+		INSERT INTO jobs (type, payload, state, available_at, idempotency_key)
+		VALUES ($1, $2, 'pending', $3, NULLIF($4, ''))
+		ON CONFLICT (idempotency_key) DO NOTHING
 		RETURNING id
 		`,
-		task.Type,
-		payload,
-	).Scan(&id)
+		taskType,
+		encoded,
+		at,
+		key,
+	).Scan(&taskID)
 
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, nil
+	}
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 
-	return id, nil
+	return taskID, true, nil
 }
 
 func (q *Queue) Dequeue(workerID string, leaseDuration time.Duration) (Task, bool, error) {

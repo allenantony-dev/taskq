@@ -1,0 +1,1 @@
+ALTER TABLE jobs ADD COLUMN idempotency_key TEXT UNIQUE;
