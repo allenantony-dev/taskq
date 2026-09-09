@@ -22,13 +22,13 @@ func NewQueue(pool *pgxpool.Pool) *Queue {
 }
 
 func (q *Queue) Enqueue(taskType string, payload map[string]any) (int64, error) {
-	id, _, err := q.EnqueueAt(taskType, payload, time.Now(), "")
+	id, _, err := q.EnqueueAt(taskType, payload, time.Now(), "", PriorityNormal)
 	return id, err
 }
 
 // EnqueueAt schedules a task for a given time. A non-empty key deduplicates:
 // the insert is skipped and false returned if a job already holds that key.
-func (q *Queue) EnqueueAt(taskType string, payload map[string]any, at time.Time, key string) (int64, bool, error) {
+func (q *Queue) EnqueueAt(taskType string, payload map[string]any, at time.Time, key string, priority int) (int64, bool, error) {
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return 0, false, err
@@ -39,8 +39,8 @@ func (q *Queue) EnqueueAt(taskType string, payload map[string]any, at time.Time,
 	err = q.db.QueryRow(
 		context.Background(),
 		`
-		INSERT INTO jobs (type, payload, state, available_at, idempotency_key)
-		VALUES ($1, $2, 'pending', $3, NULLIF($4, ''))
+		INSERT INTO jobs (type, payload, state, available_at, idempotency_key, priority)
+		VALUES ($1, $2, 'pending', $3, NULLIF($4, ''), $5)
 		ON CONFLICT (idempotency_key) DO NOTHING
 		RETURNING id
 		`,
@@ -48,6 +48,7 @@ func (q *Queue) EnqueueAt(taskType string, payload map[string]any, at time.Time,
 		encoded,
 		at,
 		key,
+		priority,
 	).Scan(&taskID)
 
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -77,7 +78,7 @@ func (q *Queue) Dequeue(workerID string, leaseDuration time.Duration) (Task, boo
 		FROM jobs
 		WHERE state = 'pending'
 			AND NOW() >= available_at
-		ORDER BY id
+		ORDER BY priority, id
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED;
 		`,

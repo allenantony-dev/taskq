@@ -46,7 +46,7 @@ go build -o "$RUN" ./... || exit 1
 
 qdb "DELETE FROM jobs;" >/dev/null
 rdb "TRUNCATE reports;" >/dev/null
-ID=$("$RUN/producer" | grep -oE '#[0-9]+' | tr -d '#')
+ID=$(qdb "INSERT INTO jobs (type, payload, state) VALUES ('report', '{}', 'pending') RETURNING id;" | head -1)
 say "enqueued job $ID (REPORT_DELAY=$REPORT_DELAY)"
 
 "$RUN/reaper" >"$RUN/reaper.log" 2>&1 &	RPID=$!
