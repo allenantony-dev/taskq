@@ -1,17 +1,24 @@
 #!/bin/bash
-# Proves the fencing token rejects a zombie worker's stale write.
+# Proves an evicted worker cannot corrupt the report the new owner wrote.
 #
 # Worker A claims the job, then is SIGSTOPped mid-handler (frozen, not killed --
-# ^C would end it and there'd be no stale write to reject). Its lease expires,
-# the reaper requeues the job, worker B claims it with a higher token and writes
-# the report. A is then thawed and tries to write with its old token.
+# ^C would end it and it would never wake to do damage). Its lease expires, the
+# reaper requeues the job, worker B claims it with a higher token and writes the
+# report. A is then thawed and tries to carry on.
+#
+# Two defences can stop it, and which one wins is a genuine race: on SIGCONT both
+# A's handler and its heartbeat are runnable, so either the heartbeat cancels the
+# context first (A gives up) or the handler reaches its write first (the fencing
+# token rejects it). Both are correct, so this asserts what holds either way --
+# A never writes successfully, and B's row survives.
 #
 # REPORT_DELAY holds the handler open long enough for that to happen. Every wait
 # polls the database rather than sleeping a fixed interval, so the script does
 # not depend on the exact delay -- raising it only makes the run longer.
 #
-# For the control, comment out the WHERE clause in the report handler's upsert
-# and run again: A's stale write lands, reports ends at token 1, and this FAILs.
+# For the control, remove BOTH defences -- the cancel() in the heartbeat's
+# lost-lease branch and the WHERE clause in the report handler's upsert -- and
+# run again: A's write lands, reports drops to token 1, and this FAILs.
 
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -67,21 +74,22 @@ say "worker B finished it, token $(qdb "SELECT fencing_token FROM jobs WHERE id=
 echo "        reports holds: $(rdb "SELECT content||' (token '||fencing_token||')' FROM reports WHERE job_id=$ID;")"
 
 kill -CONT $APID
-say "SIGCONT worker A -- it wakes with a stale token and tries to write"
+say "SIGCONT worker A -- it should be stopped by cancellation or by the fencing token"
 
-for _ in $(seq 1 60); do grep -q "write rejected" "$RUN/A.log" && break; sleep 1; done
+for _ in $(seq 1 60); do grep -qE "context canceled|write rejected" "$RUN/A.log" && break; sleep 1; done
 
 echo
-echo "===== worker A ====="; grep -v "Lease couldn't be renewed" "$RUN/A.log"
-echo "      ($(grep -c "Lease couldn't be renewed" "$RUN/A.log") suppressed 'Lease couldn't be renewed' lines)"
-echo "===== worker B ====="; grep -v "Lease couldn't be renewed" "$RUN/B.log"
+echo "===== worker A ====="; grep -vE "Queue empty|Waiting \.\.\." "$RUN/A.log"
+echo "===== worker B ====="; grep -vE "Queue empty|Waiting \.\.\." "$RUN/B.log"
 echo "===== reports ====="; docker exec "$PSQL_CONTAINER" psql -U taskq -d reports -c "SELECT * FROM reports;"
 
 echo "===== verdict ====="
 TOKEN=$(rdb "SELECT fencing_token FROM reports WHERE job_id=$ID;")
-if grep -q "Task $ID failed: write rejected, stale token 1" "$RUN/A.log" && [ "$TOKEN" = "2" ]; then
-	echo "PASS: A's stale write was rejected; reports still holds B's row at token 2"
+if grep -qE "Task $ID failed: (context canceled|write rejected)" "$RUN/A.log" &&
+	! grep -q "report written" "$RUN/A.log" &&
+	[ "$TOKEN" = "2" ]; then
+	echo "PASS: evicted worker A never wrote ($(grep -oE "context canceled|write rejected" "$RUN/A.log" | head -1)); reports holds B's row at token 2"
 else
-	echo "FAIL: expected A rejected and reports at token 2, got token '$TOKEN'"
+	echo "FAIL: A was expected to be stopped without writing, with reports at token 2 (got '$TOKEN')"
 	exit 1
 fi

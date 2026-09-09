@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"taskq/internal/queue"
 	"taskq/internal/worker"
 	"time"
@@ -14,7 +16,7 @@ import (
 )
 
 func main() {
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
@@ -46,17 +48,22 @@ func main() {
 	q := queue.NewQueue(queuePool)
 
 	handlers := map[string]worker.Handler{
-		"email": func(task queue.Task) error {
+		"email": func(ctx context.Context, task queue.Task) error {
 			fmt.Println("Sending email ...")
 			return nil
 		},
-		"image": func(task queue.Task) error {
+		"image": func(ctx context.Context, task queue.Task) error {
 			fmt.Println("Resizing image ...")
 			return nil
 		},
-		"report": func(task queue.Task) error {
+		"report": func(ctx context.Context, task queue.Task) error {
 			fmt.Printf("Generating report ... (fencing token %d)\n", task.FencingToken)
-			time.Sleep(reportDelay)
+
+			select {
+			case <-time.After(reportDelay):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 
 			result, err := reportsPool.Exec(
 				ctx,
@@ -86,6 +93,24 @@ func main() {
 	}
 
 	w := worker.NewWorker(q, handlers)
-	w.Run()
 
+	done := make(chan struct{})
+	go func() {
+		w.Run(ctx)
+		close(done)
+	}()
+
+	<-ctx.Done()
+	// Unregister so a second signal kills the process instead of being swallowed.
+	stop()
+
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		// Past the lease the reaper can reclaim the job anyway, so waiting
+		// longer buys nothing. Exit hard: a handler ignoring its context may
+		// still be holding a pool connection that Close would wait on.
+		fmt.Println("Shutdown deadline exceeded, abandoning in-flight job")
+		os.Exit(1)
+	}
 }

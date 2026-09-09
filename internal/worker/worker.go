@@ -17,7 +17,7 @@ var backoff = []time.Duration{time.Second, 10 * time.Second, time.Minute, 5 * ti
 // %w to send the task straight to the dead state.
 var ErrPermanent = errors.New("permanent failure")
 
-type Handler func(queue.Task) error
+type Handler func(context.Context, queue.Task) error
 
 type Worker struct {
 	id       string
@@ -35,8 +35,8 @@ func NewWorker(q *queue.Queue, handlers map[string]Handler) *Worker {
 	}
 }
 
-func (w *Worker) Run() {
-	for {
+func (w *Worker) Run(ctx context.Context) {
+	for ctx.Err() == nil {
 		task, ok, err := w.q.Dequeue(w.id, w.lease)
 		if err != nil {
 			fmt.Printf("Failed to dequeue task: %v\n", err)
@@ -44,29 +44,46 @@ func (w *Worker) Run() {
 		}
 		if !ok {
 			fmt.Println("Waiting ...")
-			time.Sleep(2 * time.Minute)
+			select {
+			case <-ctx.Done():
+			case <-time.After(5 * time.Second):
+			}
 			continue
 		}
 
 		fmt.Printf("Dequeued task %d (%s)\n", task.ID, task.Type)
 
-		w.process(task)
+		w.process(ctx, task)
 	}
 }
 
-func (w *Worker) process(task queue.Task) {
+func (w *Worker) process(shutdown context.Context, task queue.Task) {
 	handler, ok := w.handlers[task.Type]
 	if !ok {
 		fmt.Printf("No handler for task type: %s\n", task.Type)
 		return
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(shutdown)
 	defer cancel()
 
-	go w.heartbeat(ctx, task.ID)
+	go w.heartbeat(ctx, cancel, task.ID)
 
-	if err := handler(task); err != nil {
+	if err := handler(ctx, task); err != nil {
+		if shutdown.Err() != nil {
+			released, err := w.q.Release(w.id, task.ID)
+			if err != nil {
+				fmt.Printf("Failed to release task %d: %v\n", task.ID, err)
+				return
+			}
+			if !released {
+				fmt.Printf("Worker %s was evicted from task: %d\n", w.id, task.ID)
+				return
+			}
+			fmt.Printf("Task %d released for another worker\n", task.ID)
+			return
+		}
+
 		fmt.Printf("Task %d failed: %v\n", task.ID, err)
 		w.reschedule(task, err)
 		return
@@ -113,7 +130,7 @@ func (w *Worker) reschedule(task queue.Task, handlerErr error) {
 	fmt.Printf("Task %d retrying in %s (attempt %d of %d)\n", task.ID, delay, task.Attempts, task.MaxAttempts)
 }
 
-func (w *Worker) heartbeat(ctx context.Context, taskID int64) {
+func (w *Worker) heartbeat(ctx context.Context, cancel context.CancelFunc, taskID int64) {
 	ticker := time.NewTicker(w.lease / 3)
 	defer ticker.Stop()
 
@@ -130,6 +147,8 @@ func (w *Worker) heartbeat(ctx context.Context, taskID int64) {
 			}
 			if !renewed {
 				fmt.Printf("Lease couldn't be renewed for worker %s working on task: %d\n", w.id, taskID)
+				cancel()
+				return
 			}
 		case <-ctx.Done():
 			return

@@ -200,6 +200,29 @@ func (q *Queue) Dead(workerID string, taskID int64, lastError string) (bool, err
 	return result.RowsAffected() == 1, nil
 }
 
+// Release hands a claimed job back on shutdown. attempts is deliberately not
+// decremented, and available_at is not pushed out.
+func (q *Queue) Release(workerID string, taskID int64) (bool, error) {
+	result, err := q.db.Exec(
+		context.Background(),
+		`
+		UPDATE jobs
+		SET state = 'pending',
+			current_worker = NULL,
+			lease_expiry = NULL
+		WHERE id = $1
+			AND current_worker = $2;
+		`,
+		taskID,
+		workerID,
+	)
+	if err != nil {
+		return false, err
+	}
+
+	return result.RowsAffected() == 1, nil
+}
+
 func (q *Queue) ReapExpired() (int64, error) {
 	result, err := q.db.Exec(
 		context.Background(),
