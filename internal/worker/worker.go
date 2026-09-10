@@ -17,6 +17,17 @@ var backoff = []time.Duration{time.Second, 10 * time.Second, time.Minute, 5 * ti
 // %w to send the task straight to the dead state.
 var ErrPermanent = errors.New("permanent failure")
 
+// backoffFor returns the ceiling for this attempt, which the caller jitters
+// within. Attempts start at 1, and the last delay repeats past the end.
+func backoffFor(attempts int64) time.Duration {
+	return backoff[min(int(attempts)-1, len(backoff)-1)]
+}
+
+// isFinal reports whether a failure ends the job rather than earning a retry.
+func isFinal(task queue.Task, err error) bool {
+	return errors.Is(err, ErrPermanent) || task.Attempts >= task.MaxAttempts
+}
+
 type Handler func(context.Context, queue.Task) error
 
 type Worker struct {
@@ -104,7 +115,7 @@ func (w *Worker) process(shutdown context.Context, task queue.Task) {
 }
 
 func (w *Worker) reschedule(task queue.Task, handlerErr error) {
-	if errors.Is(handlerErr, ErrPermanent) || task.Attempts >= task.MaxAttempts {
+	if isFinal(task, handlerErr) {
 		dead, err := w.q.Dead(w.id, task.ID, handlerErr.Error())
 		if err != nil {
 			fmt.Printf("Failed to mark task %d dead: %v\n", task.ID, err)
@@ -118,7 +129,7 @@ func (w *Worker) reschedule(task queue.Task, handlerErr error) {
 		return
 	}
 
-	delay := rand.N(backoff[min(int(task.Attempts)-1, len(backoff)-1)])
+	delay := rand.N(backoffFor(task.Attempts))
 
 	retried, err := w.q.Retry(w.id, task.ID, delay, handlerErr.Error())
 	if err != nil {

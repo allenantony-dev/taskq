@@ -185,7 +185,7 @@ Postgres, with two databases: one for the queue, one for the `report` handler's 
 docker compose up -d
 ```
 
-`database/init.sh` runs on first start: it applies `database/migrations/queue/` to the queue database, creates `reports`, and applies `database/migrations/reports/` to that.
+`database/init.sh` runs on first start: it applies `database/migrations/queue/` to the queue database, creates `reports`, and applies `database/migrations/reports/` to that. It also creates `taskq_test`, which the tests wipe between cases.
 
 It runs only when the data directory is empty, which with a named volume means the first `up` and never again. A migration added later is silently skipped: `docker compose up` reports success, then the app fails with a column-does-not-exist error. Apply it by hand, or `docker compose down -v` to recreate the volume.
 
@@ -199,6 +199,17 @@ go run ./cmd/producer
 ```
 
 `REPORT_DELAY` (e.g. `90s`) makes the `report` handler sleep, which is how the eviction test keeps a job in flight long enough to freeze the worker holding it.
+
+### Tests
+
+```bash
+export TEST_DATABASE_URL="postgres://taskq:taskq@localhost:5432/taskq_test?sslmode=disable"
+go test ./...
+```
+
+Most of what is worth testing here is SQL — the ownership guards, `SKIP LOCKED`, the `ON CONFLICT` dedup — so those tests run against a real Postgres rather than a mock.
+
+**Without `TEST_DATABASE_URL` every test skips and `go test ./...` still prints `ok`.** That is the right default for a fresh clone, but it means a CI job that forgets the variable is green because it ran nothing. Set it there, and check the run reports the tests it actually executed.
 
 ### API
 
@@ -260,6 +271,6 @@ Deliberately deferred, with the trigger for each.
 
 **Not yet built**
 - No migration runner. `init.sh` only runs on an empty volume, so a migration added later needs `docker compose down -v` or applying by hand. Bites as soon as there is a second environment.
-- No tests beyond `scripts/eviction-test.sh`.
+- No CI, so the tests only run when someone remembers to.
 - One job at a time per worker; concurrency comes from running more processes.
 - `fmt.Printf` rather than structured logging.
