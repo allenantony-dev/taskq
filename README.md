@@ -275,4 +275,3 @@ Deliberately deferred, with the trigger for each.
 
 **Not yet built**
 - No migration runner. `init.sh` only runs on an empty volume, so a migration added later needs `docker compose down -v` or applying by hand. Bites as soon as there is a second environment.
-- No CI, so the tests only run when someone remembers to.
