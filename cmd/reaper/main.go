@@ -14,6 +14,14 @@ import (
 func main() {
 	ctx := context.Background()
 
+	if v := os.Getenv("LOG_LEVEL"); v != "" {
+		var level slog.Level
+		if err := level.UnmarshalText([]byte(v)); err != nil {
+			log.Fatal(err)
+		}
+		slog.SetLogLoggerLevel(level)
+	}
+
 	dbUrl := os.Getenv("DATABASE_URL")
 	if dbUrl == "" {
 		log.Fatal("DATABASE_URL is not set")

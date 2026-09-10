@@ -198,6 +198,10 @@ go run ./cmd/worker &
 go run ./cmd/producer
 ```
 
+`LOG_LEVEL` (`debug`, `info`, `warn`, `error`; default `info`) sets the level for all three services. `debug` shows the per-poll `queue empty` line, and `warn` silences the reaper's per-tick line.
+
+`WORKER_CONCURRENCY` (default `1`) runs that many claim loops in one process, each with its own worker id. `FOR UPDATE SKIP LOCKED` already makes concurrent claiming safe, so they share the pool and the handler map and nothing else.
+
 `REPORT_DELAY` (e.g. `90s`) makes the `report` handler sleep, which is how the eviction test keeps a job in flight long enough to freeze the worker holding it.
 
 ### Tests
@@ -272,4 +276,3 @@ Deliberately deferred, with the trigger for each.
 **Not yet built**
 - No migration runner. `init.sh` only runs on an empty volume, so a migration added later needs `docker compose down -v` or applying by hand. Bites as soon as there is a second environment.
 - No CI, so the tests only run when someone remembers to.
-- One job at a time per worker; concurrency comes from running more processes.

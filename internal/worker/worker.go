@@ -59,7 +59,8 @@ func (w *Worker) Run(ctx context.Context) {
 			continue
 		}
 		if !ok {
-			w.log.Info("queue empty")
+			// Debug: N loops idling would otherwise log this N times every poll.
+			w.log.Debug("queue empty")
 			select {
 			case <-ctx.Done():
 			case <-time.After(5 * time.Second):

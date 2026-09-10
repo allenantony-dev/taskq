@@ -30,6 +30,14 @@ type jobResponse struct {
 func main() {
 	ctx := context.Background()
 
+	if v := os.Getenv("LOG_LEVEL"); v != "" {
+		var level slog.Level
+		if err := level.UnmarshalText([]byte(v)); err != nil {
+			log.Fatal(err)
+		}
+		slog.SetLogLoggerLevel(level)
+	}
+
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL is not set")
