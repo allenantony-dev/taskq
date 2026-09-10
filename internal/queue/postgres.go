@@ -11,6 +11,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// The completion writes below are deliberately not cancellable: they record
+// work that already happened, so abandoning one would lose the record and let
+// the job run again. This timeout exists only so a hung database cannot block
+// a worker indefinitely.
+const completionTimeout = 5 * time.Second
+
 type Queue struct {
 	db *pgxpool.Pool
 }
@@ -21,8 +27,8 @@ func NewQueue(pool *pgxpool.Pool) *Queue {
 	}
 }
 
-func (q *Queue) Enqueue(taskType string, payload map[string]any) (int64, error) {
-	id, _, err := q.EnqueueAt(taskType, payload, time.Now(), "", PriorityNormal)
+func (q *Queue) Enqueue(ctx context.Context, taskType string, payload map[string]any) (int64, error) {
+	id, _, err := q.EnqueueAt(ctx, taskType, payload, time.Now(), "", PriorityNormal)
 	return id, err
 }
 
@@ -33,7 +39,7 @@ var ErrKeyReused = errors.New("idempotency key reused with different content")
 // EnqueueAt schedules a task for a given time. A non-empty key deduplicates:
 // if a job already holds that key, its id is returned with false and nothing
 // is inserted.
-func (q *Queue) EnqueueAt(taskType string, payload map[string]any, at time.Time, key string, priority int) (int64, bool, error) {
+func (q *Queue) EnqueueAt(ctx context.Context, taskType string, payload map[string]any, at time.Time, key string, priority int) (int64, bool, error) {
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return 0, false, err
@@ -42,7 +48,7 @@ func (q *Queue) EnqueueAt(taskType string, payload map[string]any, at time.Time,
 	var taskID int64
 
 	err = q.db.QueryRow(
-		context.Background(),
+		ctx,
 		`
 		INSERT INTO jobs (type, payload, state, available_at, idempotency_key, priority)
 		VALUES ($1, $2, 'pending', $3, NULLIF($4, ''), $5)
@@ -62,7 +68,7 @@ func (q *Queue) EnqueueAt(taskType string, payload map[string]any, at time.Time,
 		// Compared in Postgres so jsonb equality handles key order and
 		// whitespace; the stored bytes never match a fresh json.Marshal.
 		err = q.db.QueryRow(
-			context.Background(),
+			ctx,
 			`
 			SELECT id, type = $2 AND payload = $3
 			FROM jobs
@@ -88,11 +94,11 @@ func (q *Queue) EnqueueAt(taskType string, payload map[string]any, at time.Time,
 	return taskID, true, nil
 }
 
-func (q *Queue) Get(taskID int64) (TaskStatus, bool, error) {
+func (q *Queue) Get(ctx context.Context, taskID int64) (TaskStatus, bool, error) {
 	var status TaskStatus
 
 	err := q.db.QueryRow(
-		context.Background(),
+		ctx,
 		`
 		SELECT id, type, state, attempts, max_attempts, last_error
 		FROM jobs
@@ -118,18 +124,20 @@ func (q *Queue) Get(taskID int64) (TaskStatus, bool, error) {
 	return status, true, nil
 }
 
-func (q *Queue) Dequeue(workerID string, leaseDuration time.Duration) (Task, bool, error) {
+func (q *Queue) Dequeue(ctx context.Context, workerID string, leaseDuration time.Duration) (Task, bool, error) {
 	var task Task
 	var payload []byte
 
-	tx, err := q.db.Begin(context.Background())
+	tx, err := q.db.Begin(ctx)
 	if err != nil {
 		return Task{}, false, err
 	}
+	// Rolling back is cleanup, not work: on a cancelled ctx pgx cannot send it
+	// and discards the connection instead of returning it to the pool.
 	defer tx.Rollback(context.Background())
 
 	err = tx.QueryRow(
-		context.Background(),
+		ctx,
 		`
 		SELECT id, type, payload, max_attempts
 		FROM jobs
@@ -161,7 +169,7 @@ func (q *Queue) Dequeue(workerID string, leaseDuration time.Duration) (Task, boo
 	leaseExpiry := time.Now().Add(leaseDuration)
 
 	err = tx.QueryRow(
-		context.Background(),
+		ctx,
 		`
 		UPDATE jobs
 		SET state = 'running',
@@ -180,7 +188,7 @@ func (q *Queue) Dequeue(workerID string, leaseDuration time.Duration) (Task, boo
 		return Task{}, false, err
 	}
 
-	if err := tx.Commit(context.Background()); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return Task{}, false, err
 	}
 
@@ -188,8 +196,11 @@ func (q *Queue) Dequeue(workerID string, leaseDuration time.Duration) (Task, boo
 }
 
 func (q *Queue) Complete(workerID string, taskID int64) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), completionTimeout)
+	defer cancel()
+
 	result, err := q.db.Exec(
-		context.Background(),
+		ctx,
 		`
 		UPDATE jobs
 		SET state = 'done',
@@ -210,8 +221,11 @@ func (q *Queue) Complete(workerID string, taskID int64) (bool, error) {
 }
 
 func (q *Queue) Retry(workerID string, taskID int64, delay time.Duration, lastError string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), completionTimeout)
+	defer cancel()
+
 	result, err := q.db.Exec(
-		context.Background(),
+		ctx,
 		`
 		UPDATE jobs
 		SET state = 'pending',
@@ -235,8 +249,11 @@ func (q *Queue) Retry(workerID string, taskID int64, delay time.Duration, lastEr
 }
 
 func (q *Queue) Dead(workerID string, taskID int64, lastError string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), completionTimeout)
+	defer cancel()
+
 	result, err := q.db.Exec(
-		context.Background(),
+		ctx,
 		`
 		UPDATE jobs
 		SET state = 'dead',
@@ -260,8 +277,11 @@ func (q *Queue) Dead(workerID string, taskID int64, lastError string) (bool, err
 // Release hands a claimed job back on shutdown. attempts is deliberately not
 // decremented, and available_at is not pushed out.
 func (q *Queue) Release(workerID string, taskID int64) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), completionTimeout)
+	defer cancel()
+
 	result, err := q.db.Exec(
-		context.Background(),
+		ctx,
 		`
 		UPDATE jobs
 		SET state = 'pending',

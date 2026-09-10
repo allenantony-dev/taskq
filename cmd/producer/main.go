@@ -43,7 +43,7 @@ func main() {
 
 	for range 10 {
 		for _, task := range tasks {
-			id, err := q.Enqueue(task.Type, task.Payload)
+			id, err := q.Enqueue(ctx, task.Type, task.Payload)
 			if err != nil {
 				log.Fatal(err)
 			}

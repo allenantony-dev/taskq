@@ -37,9 +37,11 @@ func NewWorker(q *queue.Queue, handlers map[string]Handler) *Worker {
 
 func (w *Worker) Run(ctx context.Context) {
 	for ctx.Err() == nil {
-		task, ok, err := w.q.Dequeue(w.id, w.lease)
+		task, ok, err := w.q.Dequeue(ctx, w.id, w.lease)
 		if err != nil {
-			fmt.Printf("Failed to dequeue task: %v\n", err)
+			if !errors.Is(err, context.Canceled) {
+				fmt.Printf("Failed to dequeue task: %v\n", err)
+			}
 			continue
 		}
 		if !ok {

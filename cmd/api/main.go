@@ -58,7 +58,7 @@ func main() {
 			return
 		}
 
-		id, created, err := q.EnqueueAt(body.Type, body.Payload, time.Now(), r.Header.Get("Idempotency-Key"), queue.PriorityNormal)
+		id, created, err := q.EnqueueAt(r.Context(), body.Type, body.Payload, time.Now(), r.Header.Get("Idempotency-Key"), queue.PriorityNormal)
 		if errors.Is(err, queue.ErrKeyReused) {
 			http.Error(w, "Idempotency-Key already used for a different job", http.StatusConflict)
 			return
@@ -88,7 +88,7 @@ func main() {
 			return
 		}
 
-		status, ok, err := q.Get(id)
+		status, ok, err := q.Get(r.Context(), id)
 		if err != nil {
 			log.Printf("Failed to fetch job %d: %v", id, err)
 			http.Error(w, "failed to fetch job", http.StatusInternalServerError)
