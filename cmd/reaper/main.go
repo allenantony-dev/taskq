@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"taskq/internal/queue"
 	"time"
@@ -33,7 +33,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		fmt.Printf("Reaper: recovered %d tasks\n", recovered)
+		slog.Info("reaped", "count", recovered)
 		time.Sleep(5 * time.Second)
 	}
 }

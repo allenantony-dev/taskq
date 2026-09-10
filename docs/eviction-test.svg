@@ -1,29 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="785" height="645" viewBox="0 0 785 645" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'DejaVu Sans Mono',monospace" font-size="13">
-<rect width="785" height="645" rx="8" fill="#14161a"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="645" viewBox="0 0 980 645" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'DejaVu Sans Mono',monospace" font-size="13">
+<rect width="980" height="645" rx="8" fill="#14161a"/>
 <g fill="#c9d1d9">
 <text x="22" y="34.0" xml:space="preserve"><tspan fill="#56d364">$ </tspan><tspan fill="#c9d1d9">./scripts/eviction-test.sh</tspan></text>
-<text x="22" y="72.0" xml:space="preserve"><tspan fill="#79c0ff">[t=  2s]</tspan><tspan fill="#c9d1d9"> enqueued job 375 (REPORT_DELAY=30s)</tspan></text>
-<text x="22" y="91.0" xml:space="preserve"><tspan fill="#79c0ff">[t=  2s]</tspan><tspan fill="#c9d1d9"> worker A claimed it, token 1</tspan></text>
-<text x="22" y="110.0" xml:space="preserve"><tspan fill="#79c0ff">[t=  2s]</tspan><tspan fill="#c9d1d9"> SIGSTOP worker A (pid 2715601)</tspan><tspan fill="#8b949e"> -- its heartbeat is frozen too, so the lease will lapse</tspan></text>
-<text x="22" y="129.0" xml:space="preserve"><tspan fill="#79c0ff">[t= 33s]</tspan><tspan fill="#c9d1d9"> reaper requeued it</tspan></text>
-<text x="22" y="148.0" xml:space="preserve"><tspan fill="#79c0ff">[t= 63s]</tspan><tspan fill="#c9d1d9"> worker B finished it, token 2</tspan></text>
-<text x="22" y="167.0" xml:space="preserve"><tspan fill="#8b949e">        reports holds: report for job 375 (token 2)</tspan></text>
-<text x="22" y="186.0" xml:space="preserve"><tspan fill="#79c0ff">[t= 64s]</tspan><tspan fill="#c9d1d9"> SIGCONT worker A</tspan><tspan fill="#8b949e"> -- it should be stopped by cancellation or by the fencing token</tspan></text>
+<text x="22" y="72.0" xml:space="preserve"><tspan fill="#79c0ff">[t=  1s]</tspan><tspan fill="#c9d1d9"> enqueued job 383 (REPORT_DELAY=30s)</tspan></text>
+<text x="22" y="91.0" xml:space="preserve"><tspan fill="#79c0ff">[t=  1s]</tspan><tspan fill="#c9d1d9"> worker A claimed it, token 1</tspan></text>
+<text x="22" y="110.0" xml:space="preserve"><tspan fill="#79c0ff">[t=  1s]</tspan><tspan fill="#c9d1d9"> SIGSTOP worker A (pid 2892890)</tspan><tspan fill="#8b949e"> -- its heartbeat is frozen too, so the lease will lapse</tspan></text>
+<text x="22" y="129.0" xml:space="preserve"><tspan fill="#79c0ff">[t= 32s]</tspan><tspan fill="#c9d1d9"> reaper requeued it</tspan></text>
+<text x="22" y="148.0" xml:space="preserve"><tspan fill="#79c0ff">[t= 62s]</tspan><tspan fill="#c9d1d9"> worker B finished it, token 2</tspan></text>
+<text x="22" y="167.0" xml:space="preserve"><tspan fill="#8b949e">        reports holds: report for job 383 (token 2)</tspan></text>
+<text x="22" y="186.0" xml:space="preserve"><tspan fill="#79c0ff">[t= 62s]</tspan><tspan fill="#c9d1d9"> SIGCONT worker A</tspan><tspan fill="#8b949e"> -- it should be stopped by cancellation or by the fencing token</tspan></text>
 <text x="22" y="224.0" xml:space="preserve"><tspan fill="#6e7681">===== worker A =====</tspan></text>
-<text x="22" y="243.0" xml:space="preserve"><tspan fill="#c9d1d9">Dequeued task 375 (report)</tspan></text>
-<text x="22" y="262.0" xml:space="preserve"><tspan fill="#c9d1d9">Generating report ... (fencing token 1)</tspan></text>
-<text x="22" y="281.0" xml:space="preserve"><tspan fill="#e3b341">Lease couldn&#x27;t be renewed for worker a8c607f2-d597-40d8-bc41-c296d34dc77a working on task: 375</tspan></text>
-<text x="22" y="300.0" xml:space="preserve"><tspan fill="#e3b341">Task 375 failed: context canceled</tspan></text>
-<text x="22" y="319.0" xml:space="preserve"><tspan fill="#e3b341">Worker a8c607f2-d597-40d8-bc41-c296d34dc77a was evicted from task: 375</tspan></text>
+<text x="22" y="243.0" xml:space="preserve"><tspan fill="#6e7681">2026/09/11 00:10:28 </tspan><tspan fill="#c9d1d9">INFO </tspan><tspan fill="#c9d1d9">dequeued worker_id=1da8e432-f189-4555-a2fe-fcbbf26fc7f1 job_id=383 type=report</tspan></text>
+<text x="22" y="262.0" xml:space="preserve"><tspan fill="#6e7681">2026/09/11 00:10:28 </tspan><tspan fill="#c9d1d9">INFO </tspan><tspan fill="#c9d1d9">generating report job_id=383 fencing_token=1</tspan></text>
+<text x="22" y="281.0" xml:space="preserve"><tspan fill="#6e7681">2026/09/11 00:11:29 </tspan><tspan fill="#e3b341">WARN </tspan><tspan fill="#e3b341">lease lost worker_id=1da8e432-f189-4555-a2fe-fcbbf26fc7f1 job_id=383</tspan></text>
+<text x="22" y="300.0" xml:space="preserve"><tspan fill="#6e7681">2026/09/11 00:11:29 </tspan><tspan fill="#e3b341">WARN </tspan><tspan fill="#e3b341">handler failed worker_id=1da8e432-f189-4555-a2fe-fcbbf26fc7f1 job_id=383 err=&quot;context canceled&quot;</tspan></text>
+<text x="22" y="319.0" xml:space="preserve"><tspan fill="#6e7681">2026/09/11 00:11:29 </tspan><tspan fill="#e3b341">WARN </tspan><tspan fill="#e3b341">evicted worker_id=1da8e432-f189-4555-a2fe-fcbbf26fc7f1 job_id=383</tspan></text>
 <text x="22" y="357.0" xml:space="preserve"><tspan fill="#6e7681">===== worker B =====</tspan></text>
-<text x="22" y="376.0" xml:space="preserve"><tspan fill="#c9d1d9">Dequeued task 375 (report)</tspan></text>
-<text x="22" y="395.0" xml:space="preserve"><tspan fill="#c9d1d9">Generating report ... (fencing token 2)</tspan></text>
-<text x="22" y="414.0" xml:space="preserve"><tspan fill="#56d364">task 375: report written, token 2</tspan></text>
-<text x="22" y="433.0" xml:space="preserve"><tspan fill="#56d364">Task 375 completed</tspan></text>
+<text x="22" y="376.0" xml:space="preserve"><tspan fill="#6e7681">2026/09/11 00:10:59 </tspan><tspan fill="#c9d1d9">INFO </tspan><tspan fill="#c9d1d9">dequeued worker_id=39c7e16a-37fb-44a7-bb5a-8dc0f997b9f1 job_id=383 type=report</tspan></text>
+<text x="22" y="395.0" xml:space="preserve"><tspan fill="#6e7681">2026/09/11 00:10:59 </tspan><tspan fill="#c9d1d9">INFO </tspan><tspan fill="#c9d1d9">generating report job_id=383 fencing_token=2</tspan></text>
+<text x="22" y="414.0" xml:space="preserve"><tspan fill="#6e7681">2026/09/11 00:11:29 </tspan><tspan fill="#c9d1d9">INFO </tspan><tspan fill="#c9d1d9">report written job_id=383 fencing_token=2</tspan></text>
+<text x="22" y="433.0" xml:space="preserve"><tspan fill="#6e7681">2026/09/11 00:11:29 </tspan><tspan fill="#c9d1d9">INFO </tspan><tspan fill="#c9d1d9">completed worker_id=39c7e16a-37fb-44a7-bb5a-8dc0f997b9f1 job_id=383</tspan></text>
 <text x="22" y="471.0" xml:space="preserve"><tspan fill="#6e7681">===== reports =====</tspan></text>
 <text x="22" y="490.0" xml:space="preserve"><tspan fill="#8b949e"> job_id |      content       | fencing_token</tspan></text>
 <text x="22" y="509.0" xml:space="preserve"><tspan fill="#8b949e">--------+--------------------+---------------</tspan></text>
-<text x="22" y="528.0" xml:space="preserve"><tspan fill="#8b949e">    375 | report for job 375 |             2</tspan></text>
+<text x="22" y="528.0" xml:space="preserve"><tspan fill="#8b949e">    383 | report for job 383 |             2</tspan></text>
 <text x="22" y="547.0" xml:space="preserve"><tspan fill="#8b949e">(1 row)</tspan></text>
 <text x="22" y="585.0" xml:space="preserve"><tspan fill="#6e7681">===== verdict =====</tspan></text>
 <text x="22" y="604.0" xml:space="preserve"><tspan fill="#56d364">PASS</tspan><tspan fill="#c9d1d9">: evicted worker A never wrote (context canceled); reports holds B&#x27;s row at token 2</tspan></text>

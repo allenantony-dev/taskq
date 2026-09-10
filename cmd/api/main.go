@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strconv"
@@ -64,7 +65,7 @@ func main() {
 			return
 		}
 		if err != nil {
-			log.Printf("Failed to enqueue job: %v", err)
+			slog.Error("enqueue failed", "err", err)
 			http.Error(w, "failed to enqueue job", http.StatusInternalServerError)
 			return
 		}
@@ -90,7 +91,7 @@ func main() {
 
 		status, ok, err := q.Get(r.Context(), id)
 		if err != nil {
-			log.Printf("Failed to fetch job %d: %v", id, err)
+			slog.Error("fetch failed", "job_id", id, "err", err)
 			http.Error(w, "failed to fetch job", http.StatusInternalServerError)
 			return
 		}
@@ -110,6 +111,6 @@ func main() {
 		})
 	})
 
-	log.Println("Listening on :8080")
+	slog.Info("listening", "addr", ":8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }

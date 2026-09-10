@@ -3,7 +3,7 @@ package worker
 import (
 	"context"
 	"errors"
-	"fmt"
+	"log/slog"
 	"math/rand/v2"
 	"taskq/internal/queue"
 	"time"
@@ -35,14 +35,17 @@ type Worker struct {
 	lease    time.Duration
 	q        *queue.Queue
 	handlers map[string]Handler
+	log      *slog.Logger
 }
 
 func NewWorker(q *queue.Queue, handlers map[string]Handler) *Worker {
+	id := uuid.NewString()
 	return &Worker{
-		id:       uuid.NewString(),
+		id:       id,
 		lease:    30 * time.Second,
 		q:        q,
 		handlers: handlers,
+		log:      slog.With("worker_id", id),
 	}
 }
 
@@ -51,12 +54,12 @@ func (w *Worker) Run(ctx context.Context) {
 		task, ok, err := w.q.Dequeue(ctx, w.id, w.lease)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
-				fmt.Printf("Failed to dequeue task: %v\n", err)
+				w.log.Error("dequeue failed", "err", err)
 			}
 			continue
 		}
 		if !ok {
-			fmt.Println("Waiting ...")
+			w.log.Info("queue empty")
 			select {
 			case <-ctx.Done():
 			case <-time.After(5 * time.Second):
@@ -64,16 +67,18 @@ func (w *Worker) Run(ctx context.Context) {
 			continue
 		}
 
-		fmt.Printf("Dequeued task %d (%s)\n", task.ID, task.Type)
+		w.log.Info("dequeued", "job_id", task.ID, "type", task.Type)
 
 		w.process(ctx, task)
 	}
 }
 
 func (w *Worker) process(shutdown context.Context, task queue.Task) {
+	log := w.log.With("job_id", task.ID)
+
 	handler, ok := w.handlers[task.Type]
 	if !ok {
-		fmt.Printf("No handler for task type: %s\n", task.Type)
+		log.Error("no handler for task type", "type", task.Type)
 		return
 	}
 
@@ -86,46 +91,48 @@ func (w *Worker) process(shutdown context.Context, task queue.Task) {
 		if shutdown.Err() != nil {
 			released, err := w.q.Release(w.id, task.ID)
 			if err != nil {
-				fmt.Printf("Failed to release task %d: %v\n", task.ID, err)
+				log.Error("release failed", "err", err)
 				return
 			}
 			if !released {
-				fmt.Printf("Worker %s was evicted from task: %d\n", w.id, task.ID)
+				log.Warn("evicted")
 				return
 			}
-			fmt.Printf("Task %d released for another worker\n", task.ID)
+			log.Info("released for another worker")
 			return
 		}
 
-		fmt.Printf("Task %d failed: %v\n", task.ID, err)
+		log.Warn("handler failed", "err", err)
 		w.reschedule(task, err)
 		return
 	}
 
 	completed, err := w.q.Complete(w.id, task.ID)
 	if err != nil {
-		fmt.Printf("Failed to complete task: %d: %v\n", task.ID, err)
+		log.Error("complete failed", "err", err)
 		return
 	}
 	if !completed {
-		fmt.Printf("Worker %s was evicted from task: %d\n", w.id, task.ID)
+		log.Warn("evicted")
 		return
 	}
-	fmt.Printf("Task %d completed\n", task.ID)
+	log.Info("completed")
 }
 
 func (w *Worker) reschedule(task queue.Task, handlerErr error) {
+	log := w.log.With("job_id", task.ID)
+
 	if isFinal(task, handlerErr) {
 		dead, err := w.q.Dead(w.id, task.ID, handlerErr.Error())
 		if err != nil {
-			fmt.Printf("Failed to mark task %d dead: %v\n", task.ID, err)
+			log.Error("marking dead failed", "err", err)
 			return
 		}
 		if !dead {
-			fmt.Printf("Worker %s was evicted from task: %d\n", w.id, task.ID)
+			log.Warn("evicted")
 			return
 		}
-		fmt.Printf("Task %d dead after %d attempts\n", task.ID, task.Attempts)
+		log.Error("dead", "attempts", task.Attempts)
 		return
 	}
 
@@ -133,17 +140,19 @@ func (w *Worker) reschedule(task queue.Task, handlerErr error) {
 
 	retried, err := w.q.Retry(w.id, task.ID, delay, handlerErr.Error())
 	if err != nil {
-		fmt.Printf("Failed to retry task %d: %v\n", task.ID, err)
+		log.Error("retry failed", "err", err)
 		return
 	}
 	if !retried {
-		fmt.Printf("Worker %s was evicted from task: %d\n", w.id, task.ID)
+		log.Warn("evicted")
 		return
 	}
-	fmt.Printf("Task %d retrying in %s (attempt %d of %d)\n", task.ID, delay, task.Attempts, task.MaxAttempts)
+	log.Info("retrying", "delay", delay, "attempt", task.Attempts, "max_attempts", task.MaxAttempts)
 }
 
 func (w *Worker) heartbeat(ctx context.Context, cancel context.CancelFunc, taskID int64) {
+	log := w.log.With("job_id", taskID)
+
 	ticker := time.NewTicker(w.lease / 3)
 	defer ticker.Stop()
 
@@ -155,11 +164,11 @@ func (w *Worker) heartbeat(ctx context.Context, cancel context.CancelFunc, taskI
 				if errors.Is(err, context.Canceled) {
 					return
 				}
-				fmt.Printf("Failed to renew lease: %v\n", err)
+				log.Error("heartbeat failed", "err", err)
 				continue
 			}
 			if !renewed {
-				fmt.Printf("Lease couldn't be renewed for worker %s working on task: %d\n", w.id, taskID)
+				log.Warn("lease lost")
 				cancel()
 				return
 			}

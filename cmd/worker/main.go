@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -49,15 +50,15 @@ func main() {
 
 	handlers := map[string]worker.Handler{
 		"email": func(ctx context.Context, task queue.Task) error {
-			fmt.Println("Sending email ...")
+			slog.Info("sending email", "job_id", task.ID)
 			return nil
 		},
 		"image": func(ctx context.Context, task queue.Task) error {
-			fmt.Println("Resizing image ...")
+			slog.Info("resizing image", "job_id", task.ID)
 			return nil
 		},
 		"report": func(ctx context.Context, task queue.Task) error {
-			fmt.Printf("Generating report ... (fencing token %d)\n", task.FencingToken)
+			slog.Info("generating report", "job_id", task.ID, "fencing_token", task.FencingToken)
 
 			select {
 			case <-time.After(reportDelay):
@@ -87,7 +88,7 @@ func main() {
 				return fmt.Errorf("write rejected, stale token %d", task.FencingToken)
 			}
 
-			fmt.Printf("task %d: report written, token %d\n", task.ID, task.FencingToken)
+			slog.Info("report written", "job_id", task.ID, "fencing_token", task.FencingToken)
 			return nil
 		},
 	}
@@ -110,7 +111,7 @@ func main() {
 		// Past the lease the reaper can reclaim the job anyway, so waiting
 		// longer buys nothing. Exit hard: a handler ignoring its context may
 		// still be holding a pool connection that Close would wait on.
-		fmt.Println("Shutdown deadline exceeded, abandoning in-flight job")
+		slog.Error("shutdown deadline exceeded, abandoning in-flight job")
 		os.Exit(1)
 	}
 }

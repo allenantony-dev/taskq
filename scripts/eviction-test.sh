@@ -79,13 +79,13 @@ say "SIGCONT worker A -- it should be stopped by cancellation or by the fencing 
 for _ in $(seq 1 60); do grep -qE "context canceled|write rejected" "$RUN/A.log" && break; sleep 1; done
 
 echo
-echo "===== worker A ====="; grep -vE "Queue empty|Waiting \.\.\." "$RUN/A.log"
-echo "===== worker B ====="; grep -vE "Queue empty|Waiting \.\.\." "$RUN/B.log"
+echo "===== worker A ====="; grep -v "queue empty" "$RUN/A.log"
+echo "===== worker B ====="; grep -v "queue empty" "$RUN/B.log"
 echo "===== reports ====="; docker exec "$PSQL_CONTAINER" psql -U taskq -d reports -c "SELECT * FROM reports;"
 
 echo "===== verdict ====="
 TOKEN=$(rdb "SELECT fencing_token FROM reports WHERE job_id=$ID;")
-if grep -qE "Task $ID failed: (context canceled|write rejected)" "$RUN/A.log" &&
+if grep -qE "handler failed .*job_id=$ID .*err=\"(context canceled|write rejected)" "$RUN/A.log" &&
 	! grep -q "report written" "$RUN/A.log" &&
 	[ "$TOKEN" = "2" ]; then
 	echo "PASS: evicted worker A never wrote ($(grep -oE "context canceled|write rejected" "$RUN/A.log" | head -1)); reports holds B's row at token 2"

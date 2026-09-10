@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -156,7 +155,6 @@ func (q *Queue) Dequeue(ctx context.Context, workerID string, leaseDuration time
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			fmt.Println("Queue empty")
 			return Task{}, false, nil
 		}
 		return Task{}, false, err
